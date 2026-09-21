@@ -216,3 +216,31 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Media & Audio Downloads
+downloades/
+downloads/
+*.wav
+*.mp3
+*.mp4
+*.m4a
+*.flac
+*.webm
+*.avi
+*.mkv
+
+# Environment & Secret files
+.env
+.env*
+!.env.example
+*.key
+*.pem
+secrets/
+
+# Vector Store & Local Data
+vector_db/
+chroma_db/
+.chroma/
+*.faiss
+*.pkl
+
