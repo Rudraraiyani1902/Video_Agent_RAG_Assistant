@@ -7,12 +7,20 @@ from core.vector_store import build_vector_store, load_vector_store, get_retriev
 
 def get_llm():
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-    return ChatGoogleGenerativeAI(
-        model=model,
+    primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+    fallback_model = "gemini-3.5-flash" if "lite" in primary_model else "gemini-3.5-flash-lite"
+
+    primary_llm = ChatGoogleGenerativeAI(
+        model=primary_model,
         google_api_key=api_key,
         temperature=0.3,
     )
+    fallback_llm = ChatGoogleGenerativeAI(
+        model=fallback_model,
+        google_api_key=api_key,
+        temperature=0.3,
+    )
+    return primary_llm.with_fallbacks([fallback_llm])
 
 def format_docs(docs):
     return "\n\n".join([doc.page_content for doc in docs])

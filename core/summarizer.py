@@ -8,56 +8,52 @@ import os
 
 def get_llm():
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-    return ChatGoogleGenerativeAI(
-        model=model,
+    primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+    fallback_model = "gemini-3.5-flash" if "lite" in primary_model else "gemini-3.5-flash-lite"
+
+    primary_llm = ChatGoogleGenerativeAI(
+        model=primary_model,
         google_api_key=api_key,
         temperature=0.3,
     )
-
-
-def split_transcript(transcript: str) -> list:
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size = 3000,
-        chunk_overlap = 200
+    fallback_llm = ChatGoogleGenerativeAI(
+        model=fallback_model,
+        google_api_key=api_key,
+        temperature=0.3,
     )
+    return primary_llm.with_fallbacks([fallback_llm])
 
-    return splitter.split_text(transcript)
 
-def summarize(transcript : str) -> str:
+def summarize(transcript: str) -> str:
     llm = get_llm()
 
-    map_prompt = ChatPromptTemplate.from_messages(
-        [
-        ("system", "Summarize this portion of a meeting transcript concisely."),
-        ("human", "{text}"),
-    ]
-    )
-
-    map_chain = map_prompt | llm | StrOutputParser()
-
-    chunks = split_transcript(transcript)
-
-    chunk_summaries = [map_chain.invoke({"text" : chunk}) for chunk in chunks]
-
-    combined = "\n\n".join(chunk_summaries)
-
-    combined_prompt = ChatPromptTemplate.from_messages(
-        [
+    prompt = ChatPromptTemplate.from_messages([
         (
             "system",
-            "You are an expert meeting summarizer. Combine these partial summaries "
-            "into one final professional meeting summary in bullet points.",
+            "You are an expert meeting and video content analyst. "
+            "Generate a clear, professional, comprehensive summary of the transcript in structured bullet points. "
+            "Highlight the main topics, key insights, and important takeaways.",
         ),
         ("human", "{text}"),
-    ]
+    ])
+
+    chain = (
+        RunnablePassthrough()
+        | RunnableLambda(lambda x: {"text": x})
+        | prompt
+        | llm
+        | StrOutputParser()
     )
 
-    combined_chain = (
-        RunnablePassthrough() | RunnableLambda(lambda x:{"text":x}) | combined_prompt | llm | StrOutputParser()
-    )
+    # For transcripts up to 200k chars (~40k words), single-pass is 10x faster and uses only 1 API call
+    if len(transcript) <= 200000:
+        return chain.invoke(transcript)
 
-    return combined_chain.invoke(combined)
+    # Fallback for extremely long files (>4 hours)
+    splitter = RecursiveCharacterTextSplitter(chunk_size=50000, chunk_overlap=1000)
+    chunks = splitter.split_text(transcript)
+    chunk_summaries = [chain.invoke(chunk) for chunk in chunks]
+    return "\n\n".join(chunk_summaries)
 
 def generate_title(transcipt : str) -> str:
     llm = get_llm()

@@ -1,8 +1,8 @@
 from dotenv import load_dotenv
-from utils.audio_processor import process_input
+from utils.audio_processor import process_input, get_youtube_transcript
 from core.transcriber import transcribe_all
 from core.summarizer import summarize, generate_title
-from core.extractor import extract_action_items, extract_key_decisions, extract_questions
+from core.extractor import extract_action_items, extract_key_decisions, extract_questions, analyze_transcript
 from core.rag_engine import build_rag_chain, ask_question
 
 
@@ -11,31 +11,32 @@ load_dotenv()
 def run_pipeline(source :str, language :str = "english") -> dict:
     print("starting AI Video Assistant")
 
-    chunks = process_input(source)
+    transcript = None
+    if source.startswith("http://") or source.startswith("https://"):
+        transcript = get_youtube_transcript(source, language)
 
-    transcript = transcribe_all(chunks,language)
+    if not transcript:
+        chunks = process_input(source)
+        transcript = transcribe_all(chunks, language)
+
     print(f"raw transcription (first 300 characters ) {transcript[:300]}")
 
-    title = generate_title(transcript)
+    print("Analyzing transcript...")
+    analysis = analyze_transcript(transcript)
 
-    summary = summarize(transcript)
-
-    action_item = extract_action_items(transcript)
-
-    decisions = extract_key_decisions(transcript)
-    questions = extract_questions(transcript)
-    
     rag_chain = build_rag_chain(transcript)
 
     return {
-        "title": title,
+        "title": analysis["title"],
         "transcript": transcript,
-        "summary": summary,
-        "action_items": action_item,
-        "key_decisions": decisions,
-        "open_questions": questions,
+        "summary": analysis["summary"],
+        "action_items": analysis["action_items"],
+        "key_decisions": analysis["key_decisions"],
+        "open_questions": analysis["open_questions"],
         "rag_chain": rag_chain,
     }
+
+
 
 if __name__ == "__main__":
     # CLI entry point

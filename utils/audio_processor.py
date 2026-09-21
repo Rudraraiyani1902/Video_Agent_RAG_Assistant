@@ -1,9 +1,54 @@
 import yt_dlp
 from pydub import AudioSegment
 import os
+import re
+from youtube_transcript_api import YouTubeTranscriptApi
 
 DOWNLOAD_DIR = 'downloades'
 os.makedirs(DOWNLOAD_DIR,exist_ok = True)
+
+def extract_video_id(url: str) -> str:
+    patterns = [
+        r'(?:v=|\/|vi=)([0-9A-Za-z_-]{11})',
+        r'(?:youtu\.be\/)([0-9A-Za-z_-]{11})',
+        r'(?:embed\/)([0-9A-Za-z_-]{11})',
+        r'(?:shorts\/)([0-9A-Za-z_-]{11})',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    return None
+
+def get_youtube_transcript(url: str, language: str = "english") -> str:
+    """Fetch YouTube captions directly in seconds if available."""
+    video_id = extract_video_id(url)
+    if not video_id:
+        return None
+    try:
+        ytt = YouTubeTranscriptApi()
+        t_list = ytt.list(video_id)
+        preferred_langs = ['en', 'hi', 'en-US', 'en-GB'] if language.lower() != "hinglish" else ['hi', 'en', 'en-US']
+        try:
+            transcript = t_list.find_transcript(preferred_langs)
+        except Exception:
+            transcript = next(iter(t_list), None)
+            if transcript and transcript.language_code not in ['en', 'hi']:
+                try:
+                    transcript = transcript.translate('en')
+                except Exception:
+                    pass
+        if transcript:
+            fetched = transcript.fetch()
+            if fetched and fetched.snippets:
+                full_text = " ".join(s.text for s in fetched.snippets if s.text).strip()
+                if full_text:
+                    print(f"[OK] Found YouTube captions directly ({len(full_text)} chars). Skipping audio download & Whisper!")
+                    return full_text
+    except Exception as e:
+        print(f"Direct YouTube transcript unavailable: {e}. Falling back to audio download + Whisper.")
+    return None
+
 
 def download_youtube_audio(url :str) ->str:
     output_path = os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s")
